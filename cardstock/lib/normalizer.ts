@@ -98,7 +98,7 @@ export async function applyResult(productId: string, variantId: string, v: Varia
       data: { 
         variantId, 
         eventType, 
-        details: JSON.stringify({ 
+        details: { 
           prev: lastSnapshot ? {
             inStock: lastSnapshot.inStock,
             price: lastSnapshot.price?.toString()
@@ -107,7 +107,7 @@ export async function applyResult(productId: string, variantId: string, v: Varia
             inStock: v.inStock,
             price: v.price
           }
-        })
+        }
       }
     });
     

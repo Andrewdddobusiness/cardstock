@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -12,7 +12,7 @@ model User {
   email     String   @unique
   password  String
   createdAt DateTime @default(now())
-  roles     String   @default("user")
+  roles     String[] @default(["user"])
 
   rules     AlertRule[]
 }
@@ -97,7 +97,7 @@ model StockEvent {
   variant    ProductVariant @relation(fields: [variantId], references: [id])
   variantId  String
   eventType  String
-  details    String?
+  details    Json?
   occurredAt DateTime @default(now())
 }
 

@@ -18,7 +18,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@prisma/client": "^5.22.0",
+    "@prisma/client": "^6.16.2",
+    "@prisma/extension-accelerate": "^2.0.2",
     "bcryptjs": "^2.4.3",
     "cheerio": "1.0.0-rc.12",
     "next": "15.1.0",
