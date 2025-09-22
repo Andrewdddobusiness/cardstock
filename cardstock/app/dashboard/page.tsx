@@ -11,6 +11,7 @@ export default async function Dashboard() {
   const session = await getServerSession(authOptions);
   if (!session) redirect("/login");
 
+  // Fetch all products with related data (no date filter so pending items appear)
   const products = await (prisma.product as any).findMany({
     include: {
       retailer: true,
@@ -30,8 +31,12 @@ export default async function Dashboard() {
           }
         }
       }
+    },
+    orderBy: {
+      createdAt: 'asc'
     }
   });
+
 
   return (
     <div className="min-h-screen bg-neutral-50">

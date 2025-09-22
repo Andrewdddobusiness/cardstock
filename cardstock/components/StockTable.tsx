@@ -40,9 +40,12 @@ export default function StockTable({ products }: StockTableProps) {
     const rows: StockRow[] = []
     
     products.forEach(product => {
+      let hasData = false
+      
       product.variants.forEach(variant => {
         // Add store availability data
         variant.avail.forEach(avail => {
+          hasData = true
           rows.push({
             id: `${variant.id}-${avail.storeId}`,
             productTitle: product.title,
@@ -59,6 +62,7 @@ export default function StockTable({ products }: StockTableProps) {
         
         // Add online availability from snapshots if no store data
         if (variant.avail.length === 0 && variant.snapshots.length > 0) {
+          hasData = true
           const latestSnapshot = variant.snapshots[0]
           rows.push({
             id: `${variant.id}-online`,
@@ -74,6 +78,41 @@ export default function StockTable({ products }: StockTableProps) {
           })
         }
       })
+      
+      // If no stock data exists, still show the product with unknown status
+      if (!hasData && product.variants.length > 0) {
+        const variant = product.variants[0]
+        rows.push({
+          id: `${variant.id}-unknown`,
+          productTitle: product.title,
+          retailer: product.retailer.name,
+          location: 'Unknown',
+          storeName: 'Not monitored yet',
+          inStock: false,
+          price: null,
+          // Use a stable server-provided timestamp to avoid hydration mismatch
+          lastSeen: product.createdAt,
+          status: 'unknown',
+          url: product.url
+        })
+      }
+      
+      // If no variants exist, still show the product
+      if (product.variants.length === 0) {
+        rows.push({
+          id: `${product.id}-no-variant`,
+          productTitle: product.title,
+          retailer: product.retailer.name,
+          location: 'Unknown',
+          storeName: 'Not monitored yet',
+          inStock: false,
+          price: null,
+          // Use a stable server-provided timestamp to avoid hydration mismatch
+          lastSeen: product.createdAt,
+          status: 'unknown',
+          url: product.url
+        })
+      }
     })
     
     return rows
@@ -160,6 +199,9 @@ export default function StockTable({ products }: StockTableProps) {
     if (status === 'preorder') {
       return <span className="px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded-full">Preorder</span>
     }
+    if (status === 'unknown') {
+      return <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">Not Monitored</span>
+    }
     return <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">Unknown</span>
   }
 
@@ -207,6 +249,7 @@ export default function StockTable({ products }: StockTableProps) {
             <option value="available">In Stock</option>
             <option value="out-of-stock">Out of Stock</option>
             <option value="preorder">Preorder</option>
+            <option value="unknown">Not Monitored</option>
           </select>
         </div>
         
