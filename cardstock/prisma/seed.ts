@@ -19,9 +19,9 @@ async function main() {
   });
 
   const products = [
-    { retailerId: kmart.id, title: "Pokemon TCG Scarlet & Violet 151 Elite Trainer Box", url: "https://www.kmart.com.au/product/pokemon-tcg-scarlet-violet-151-elite-trainer-box/43407936", sku: null },
-    { retailerId: bigw.id, title: "Pokemon Trading Card Game Paradox Rift Booster Bundle", url: "https://www.bigw.com.au/product/pokemon-trading-card-game-paradox-rift-booster-bundle/p/202866", sku: null },
-    { retailerId: eb.id, title: "Pokemon Trading Card Game: Scarlet & Violet Paldea Evolved Booster Box", url: "https://www.ebgames.com.au/product/toys-and-collectibles/294637-pokemon-trading-card-game-scarlet-and-violet-paldea-evolved-booster-box", sku: null }
+    { retailerId: kmart.id, title: "Pokemon TCG Scarlet & Violet 151 Elite Trainer Box", url: "https://www.kmart.com.au/product/pokemon-tcg-scarlet-violet-151-elite-trainer-box-43407936/43407936", sku: "43407936" },
+    { retailerId: bigw.id, title: "Pokemon Trading Card Game Paradox Rift Booster Bundle", url: "https://www.bigw.com.au/product/pokemon-trading-card-game-paradox-rift-booster-bundle/p/202866", sku: "202866" },
+    { retailerId: eb.id, title: "Pokemon Trading Card Game: Scarlet & Violet Paldea Evolved Booster Box", url: "https://www.ebgames.com.au/product/toys-and-collectibles/294637-pokemon-trading-card-game-scarlet-and-violet-paldea-evolved-booster-box", sku: "294637" }
   ];
 
   for (const p of products) {

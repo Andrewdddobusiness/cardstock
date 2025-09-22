@@ -21,8 +21,12 @@ export async function GET() {
     for (const product of products) {
       try {
         await withThrottle(`product:${product.id}`, 60, async () => {
+          console.log(`Checking stock for: ${product.title} (${product.retailer.name})`);
+          
           const adapter = adapters[product.retailer.platform] ?? adapters.genericDom;
           const result = await adapter(product.url, { postcode: "2000" });
+          
+          console.log(`Scrape result: ${result.productTitle} - $${result.variants[0]?.price} - ${result.variants[0]?.inStock ? 'In Stock' : 'Out of Stock'}`);
           
           // Get or create variant
           let variant = product.variants[0];
@@ -42,7 +46,7 @@ export async function GET() {
           processed++;
         });
       } catch (error) {
-        console.error(`Error processing product ${product.id}:`, error);
+        console.error(`Error processing product ${product.id} (${product.title}):`, error instanceof Error ? error.message : String(error));
         errors++;
       }
     }
@@ -51,7 +55,8 @@ export async function GET() {
       ok: true, 
       processed,
       errors,
-      total: products.length
+      total: products.length,
+      message: errors > 0 ? "Some products failed to process - check server logs" : "All products processed successfully"
     });
   } catch (error) {
     console.error("Monitor run error:", error);

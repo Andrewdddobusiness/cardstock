@@ -54,11 +54,11 @@ export async function applyResult(productId: string, variantId: string, v: Varia
           variantId, 
           storeId: store.id, 
           inStock: s.inStock, 
-          price: v.price ? new Decimal(v.price) : undefined 
+          price: v.price ? new Decimal(v.price) : null 
         },
         update: { 
           inStock: s.inStock, 
-          price: v.price ? new Decimal(v.price) : undefined, 
+          price: v.price ? new Decimal(v.price) : null, 
           seenAt: new Date() 
         }
       });
@@ -116,7 +116,7 @@ export async function applyResult(productId: string, variantId: string, v: Varia
       data: { 
         variantId, 
         inStock: v.inStock, 
-        price: v.price ? new Decimal(v.price) : undefined, 
+        price: v.price ? new Decimal(v.price) : null, 
         fingerprint 
       }
     });
