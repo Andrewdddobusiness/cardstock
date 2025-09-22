@@ -1,0 +1,114 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  roles     String   @default("user")
+
+  rules     AlertRule[]
+}
+
+model Retailer {
+  id        Int       @id @default(autoincrement())
+  name      String   @unique
+  baseUrl   String
+  platform  String
+  createdAt DateTime   @default(now())
+  products  Product[]
+  stores    Store[]
+}
+
+model Product {
+  id         String   @id @default(cuid())
+  retailer   Retailer @relation(fields: [retailerId], references: [id])
+  retailerId Int
+  title      String
+  url        String   @unique
+  sku        String?
+  createdAt  DateTime @default(now())
+  variants   ProductVariant[]
+  rules      AlertRule[]
+}
+
+model ProductVariant {
+  id           String   @id @default(cuid())
+  product      Product  @relation(fields: [productId], references: [id])
+  productId    String
+  retailerVarId String?
+  msrp         Decimal?
+  createdAt    DateTime @default(now())
+
+  snapshots   InventorySnapshot[]
+  avail       StoreAvailability[]
+  events      StockEvent[]
+}
+
+model Store {
+  id         Int      @id @default(autoincrement())
+  retailer   Retailer @relation(fields: [retailerId], references: [id])
+  retailerId Int
+  storeCode  String
+  name       String
+  suburb     String?
+  state      String?
+  postcode   String?
+  lat        Float?
+  lng        Float?
+  
+  availabilities StoreAvailability[]
+
+  @@unique([retailerId, storeCode])
+}
+
+model StoreAvailability {
+  id         Int      @id @default(autoincrement())
+  variant    ProductVariant @relation(fields: [variantId], references: [id])
+  variantId  String
+  store      Store     @relation(fields: [storeId], references: [id])
+  storeId    Int
+  inStock    Boolean
+  price      Decimal?
+  seenAt     DateTime  @default(now())
+
+  @@unique([variantId, storeId])
+}
+
+model InventorySnapshot {
+  id         Int      @id @default(autoincrement())
+  variant    ProductVariant @relation(fields: [variantId], references: [id])
+  variantId  String
+  inStock    Boolean
+  price      Decimal?
+  seenAt     DateTime  @default(now())
+  fingerprint String
+}
+
+model StockEvent {
+  id         Int      @id @default(autoincrement())
+  variant    ProductVariant @relation(fields: [variantId], references: [id])
+  variantId  String
+  eventType  String
+  details    String?
+  occurredAt DateTime @default(now())
+}
+
+model AlertRule {
+  id          String   @id @default(cuid())
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  product     Product  @relation(fields: [productId], references: [id])
+  productId   String
+  sydneyOnly  Boolean  @default(true)
+  maxPrice    Decimal?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}

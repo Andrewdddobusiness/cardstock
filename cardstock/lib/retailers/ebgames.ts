@@ -1,0 +1,1 @@
+export { checkGenericDom as checkEB } from "./genericDom";

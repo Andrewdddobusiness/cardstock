@@ -1,0 +1,1 @@
+export { checkGenericDom as checkBigW } from "./genericDom";
