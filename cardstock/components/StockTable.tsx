@@ -36,6 +36,8 @@ export default function StockTable({ products }: StockTableProps) {
   const [filterLocation, setFilterLocation] = useState<string>('')
   const [sortBy, setSortBy] = useState<'product' | 'retailer' | 'location' | 'status' | 'price' | 'lastSeen'>('lastSeen')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+  const [itemsPerPage, setItemsPerPage] = useState<number>(25)
+  const [currentPage, setCurrentPage] = useState<number>(1)
 
   const stockRows = useMemo(() => {
     const rows: StockRow[] = []
@@ -198,6 +200,19 @@ export default function StockTable({ products }: StockTableProps) {
     return filtered
   }, [stockRows, filterRetailer, filterStatus, filterLocation, sortBy, sortOrder])
 
+  const paginatedRows = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage
+    const endIndex = startIndex + itemsPerPage
+    return filteredRows.slice(startIndex, endIndex)
+  }, [filteredRows, currentPage, itemsPerPage])
+
+  const totalPages = Math.ceil(filteredRows.length / itemsPerPage)
+
+  // Reset to page 1 when filters change
+  useMemo(() => {
+    setCurrentPage(1)
+  }, [filterRetailer, filterStatus, filterLocation, itemsPerPage])
+
   const retailers = [...new Set(stockRows.map(row => row.retailer))]
   const locations = [...new Set(stockRows.map(row => row.location))]
   
@@ -287,90 +302,110 @@ export default function StockTable({ products }: StockTableProps) {
             ))}
           </select>
         </div>
+        
+        <div className="flex-1 min-w-32">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Items per page</label>
+          <select 
+            value={itemsPerPage} 
+            onChange={(e) => setItemsPerPage(Number(e.target.value))}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+          >
+            <option value={10}>10</option>
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
+        </div>
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-lg border overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
+      <div className="bg-white rounded-lg border overflow-hidden flex flex-col" style={{ height: 'calc(100vh - 280px)' }}>
+        <div className="flex-1 overflow-auto">
+          <table className="w-full table-fixed">
+            <thead className="bg-gray-50 sticky top-0 z-10">
               <tr>
                 <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  className="w-[30%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('product')}
                 >
                   Product {sortBy === 'product' && (sortOrder === 'asc' ? '↑' : '↓')}
                 </th>
                 <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  className="w-[12%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('retailer')}
                 >
                   Retailer {sortBy === 'retailer' && (sortOrder === 'asc' ? '↑' : '↓')}
                 </th>
                 <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  className="w-[15%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('location')}
                 >
                   Location {sortBy === 'location' && (sortOrder === 'asc' ? '↑' : '↓')}
                 </th>
                 <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  className="w-[12%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('status')}
                 >
                   Status {sortBy === 'status' && (sortOrder === 'asc' ? '↑' : '↓')}
                 </th>
                 <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  className="w-[10%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('price')}
                 >
                   Price {sortBy === 'price' && (sortOrder === 'asc' ? '↑' : '↓')}
                 </th>
                 <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  className="w-[15%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('lastSeen')}
                 >
                   Last Updated {sortBy === 'lastSeen' && (sortOrder === 'asc' ? '↑' : '↓')}
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="w-[6%] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredRows.length === 0 ? (
+              {paginatedRows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
                     No stock data found
                   </td>
                 </tr>
               ) : (
-                filteredRows.map((row) => (
+                paginatedRows.map((row) => (
                   <tr key={row.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{row.productTitle}</div>
+                    <td className="w-[30%] px-4 py-4">
+                      <div className="text-sm font-medium text-gray-900 truncate" title={row.productTitle}>
+                        {row.productTitle}
+                      </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="w-[12%] px-4 py-4">
                       <div className="text-sm text-gray-900">{row.retailer}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{row.storeName}</div>
+                    <td className="w-[15%] px-4 py-4">
+                      <div className="text-sm text-gray-900 truncate" title={row.storeName}>
+                        {row.storeName}
+                      </div>
                       <div className="text-xs text-gray-500">{row.location}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="w-[12%] px-4 py-4">
                       {getStatusBadge(row.status, row.inStock)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="w-[10%] px-4 py-4">
                       <div className="text-sm text-gray-900">{formatPrice(row.price)}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-500">{formatDate(row.lastSeen)}</div>
+                    <td className="w-[15%] px-4 py-4">
+                      <div className="text-sm text-gray-500 truncate" title={formatDate(row.lastSeen)}>
+                        {formatDate(row.lastSeen)}
+                      </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <td className="w-[6%] px-4 py-4 text-center">
                       <a 
                         href={row.url} 
                         target="_blank" 
                         rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-900"
+                        className="text-blue-600 hover:text-blue-900 text-sm font-medium"
                       >
                         View
                       </a>
@@ -381,10 +416,38 @@ export default function StockTable({ products }: StockTableProps) {
             </tbody>
           </table>
         </div>
-      </div>
-      
-      <div className="text-sm text-gray-500 text-center">
-        Showing {filteredRows.length} of {stockRows.length} stock entries
+        
+        {/* Pagination Controls */}
+        <div className="flex-none px-4 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+          <div className="text-sm text-gray-500">
+            Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredRows.length)} of {filteredRows.length} entries
+            {filteredRows.length !== stockRows.length && ` (filtered from ${stockRows.length} total)`}
+          </div>
+          
+          {totalPages > 1 && (
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1 text-sm border border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+              >
+                Previous
+              </button>
+              
+              <span className="text-sm text-gray-500">
+                Page {currentPage} of {totalPages}
+              </span>
+              
+              <button
+                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 text-sm border border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

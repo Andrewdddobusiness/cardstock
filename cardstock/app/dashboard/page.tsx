@@ -49,7 +49,7 @@ export default async function Dashboard() {
     <div className="min-h-screen bg-neutral-50">
       <Navbar userEmail={session.user?.email || ""} />
       
-      <main className="mx-auto max-w-6xl p-6">
+      <main className="mx-auto max-w-full xl:max-w-[1400px] p-6">
         <h1 className="text-2xl font-semibold mb-6">Stock Dashboard</h1>
         
         {serializedProducts.length === 0 ? (
@@ -59,14 +59,6 @@ export default async function Dashboard() {
         ) : (
           <StockTable products={serializedProducts} />
         )}
-        
-        <div className="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <h2 className="font-semibold text-blue-900 mb-2">Stock Monitoring</h2>
-          <p className="text-sm text-blue-800">
-            Stock data updates automatically via monitoring. Use filters to find specific products or locations.
-            Green badges indicate in-stock items, red indicates out-of-stock. Click "View" to go to the product page.
-          </p>
-        </div>
       </main>
     </div>
   );
