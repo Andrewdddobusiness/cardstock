@@ -1,13 +1,14 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { Product, Retailer, ProductVariant, StoreAvailability, Store, InventorySnapshot } from '@prisma/client'
+import { Product, Retailer, ProductVariant, StoreAvailability, Store, InventorySnapshot, StockEvent } from '@prisma/client'
 
 type ProductWithData = Product & {
   retailer: Retailer
   variants: (ProductVariant & {
     avail: (StoreAvailability & { store: Store })[]
     snapshots: InventorySnapshot[]
+    events: StockEvent[]
   })[]
 }
 
@@ -54,8 +55,18 @@ export default function StockTable({ products }: StockTableProps) {
             storeName: avail.store.name,
             inStock: avail.inStock,
             price: avail.price ? Number(avail.price) : null,
-            lastSeen: avail.seenAt,
-            status: avail.inStock ? 'available' : 'out-of-stock',
+            lastSeen: new Date(avail.seenAt),
+            status: (() => {
+              // Check if the latest event has preorder flag
+              const latestEvent = variant.events[0];
+              if (latestEvent?.details && typeof latestEvent.details === 'object' && 'cur' in latestEvent.details) {
+                const curDetails = (latestEvent.details as any).cur;
+                if (curDetails?.isPreorder) return 'preorder';
+              }
+              
+              if (!avail.inStock) return 'out-of-stock';
+              return 'available';
+            })(),
             url: product.url
           })
         })
@@ -72,8 +83,18 @@ export default function StockTable({ products }: StockTableProps) {
             storeName: 'Online Store',
             inStock: latestSnapshot.inStock,
             price: latestSnapshot.price ? Number(latestSnapshot.price) : null,
-            lastSeen: latestSnapshot.seenAt,
-            status: latestSnapshot.inStock ? 'available' : 'out-of-stock',
+            lastSeen: new Date(latestSnapshot.seenAt),
+            status: (() => {
+              // Check if the latest event has preorder flag
+              const latestEvent = variant.events[0];
+              if (latestEvent?.details && typeof latestEvent.details === 'object' && 'cur' in latestEvent.details) {
+                const curDetails = (latestEvent.details as any).cur;
+                if (curDetails?.isPreorder) return 'preorder';
+              }
+              
+              if (!latestSnapshot.inStock) return 'out-of-stock';
+              return 'available';
+            })(),
             url: product.url
           })
         }
@@ -91,7 +112,7 @@ export default function StockTable({ products }: StockTableProps) {
           inStock: false,
           price: null,
           // Use a stable server-provided timestamp to avoid hydration mismatch
-          lastSeen: product.createdAt,
+          lastSeen: new Date(product.createdAt),
           status: 'unknown',
           url: product.url
         })
@@ -108,7 +129,7 @@ export default function StockTable({ products }: StockTableProps) {
           inStock: false,
           price: null,
           // Use a stable server-provided timestamp to avoid hydration mismatch
-          lastSeen: product.createdAt,
+          lastSeen: new Date(product.createdAt),
           status: 'unknown',
           url: product.url
         })

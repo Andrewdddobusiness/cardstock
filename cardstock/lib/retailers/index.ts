@@ -8,6 +8,7 @@ export type StoreAvail = {
 export type NormalizedVariant = { 
   price: number | null; 
   inStock: boolean; 
+  isPreorder?: boolean;
   storeAvails?: StoreAvail[];
 };
 

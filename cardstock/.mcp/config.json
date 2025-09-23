@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "prisma": {
+      "command": "npx",
+      "args": ["prisma", "studio", "--browser", "none"],
+      "env": {
+        "DATABASE_URL": "${DATABASE_URL}"
+      }
+    }
+  }
+}

@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
 import StockTable from "@/components/StockTable";
+import { serializeProductFast } from "@/lib/serializer";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,10 @@ export default async function Dashboard() {
           snapshots: { 
             orderBy: { id: "desc" }, 
             take: 1 
+          },
+          events: {
+            orderBy: { id: "desc" },
+            take: 1
           }
         }
       }
@@ -37,6 +42,8 @@ export default async function Dashboard() {
     }
   });
 
+  // Serialize products to handle Decimal values
+  const serializedProducts = serializeProductFast(products);
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -45,12 +52,12 @@ export default async function Dashboard() {
       <main className="mx-auto max-w-6xl p-6">
         <h1 className="text-2xl font-semibold mb-6">Stock Dashboard</h1>
         
-        {products.length === 0 ? (
+        {serializedProducts.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-neutral-600">No products being tracked yet.</p>
           </div>
         ) : (
-          <StockTable products={products} />
+          <StockTable products={serializedProducts} />
         )}
         
         <div className="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">

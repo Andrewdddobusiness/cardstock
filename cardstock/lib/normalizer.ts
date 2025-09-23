@@ -11,6 +11,7 @@ interface StoreAvail {
 interface VariantData {
   inStock: boolean;
   price: number | null;
+  isPreorder?: boolean;
   storeAvails?: StoreAvail[];
 }
 
@@ -68,7 +69,8 @@ export async function applyResult(productId: string, variantId: string, v: Varia
   // 2) Create snapshot and event if changed
   const fingerprint = fp({ 
     inStock: v.inStock, 
-    price: v.price, 
+    price: v.price,
+    isPreorder: v.isPreorder || false,
     stores: (v.storeAvails || [])
       .map(s => `${s.storeCode}:${s.inStock}`)
       .sort() 
@@ -105,7 +107,8 @@ export async function applyResult(productId: string, variantId: string, v: Varia
           } : null, 
           cur: {
             inStock: v.inStock,
-            price: v.price
+            price: v.price,
+            isPreorder: v.isPreorder || false
           }
         }
       }

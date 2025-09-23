@@ -49,37 +49,47 @@ export async function checkBigW(url: string): Promise<NormalizedProduct> {
       }
     }
     
-    // BIG W specific stock detection
+    // BIG W specific stock detection with priority system
     let inStock = false;
+    let isPreorder = false;
     
-    // Check for add to cart button
-    const addToCartButton = $('[data-testid="add-to-cart"], button:contains("Add to Cart"), button:contains("Add to cart")').not('[disabled]').not('.disabled');
-    if (addToCartButton.length > 0) {
-      inStock = true;
-    }
-    
-    // Check for pre-order
-    const preOrderButton = $('button:contains("Pre-order"), button:contains("Pre-Order")').not('[disabled]').not('.disabled');
-    if (preOrderButton.length > 0) {
-      inStock = true; // Treat pre-order as available
-    }
-    
-    // Check for out of stock indicators
-    const outOfStockIndicators = [
-      "out of stock",
-      "sold out",
-      "unavailable", 
-      "notify me",
-      "currently unavailable"
+    // PRIORITY 1: Check for preorder indicators
+    const preorderIndicators = [
+      // Check for PRE-ORDER badge/text
+      $('span:contains("PRE-ORDER"), div:contains("PRE-ORDER"), .pre-order').length > 0,
+      // Check for RELEASES text with dates
+      $('*:contains("RELEASES")').length > 0,
+      // Check for Pre-order Price Guarantee
+      $('*:contains("Pre-order Price Guarantee")').length > 0,
+      // Check for preorder buttons
+      $('button:contains("Pre-order"), button:contains("Pre-Order")').not('[disabled]').not('.disabled').length > 0
     ];
     
-    const pageText = $('body').text().toLowerCase();
-    const hasOutOfStockText = outOfStockIndicators.some(indicator => 
-      pageText.includes(indicator)
-    );
-    
-    if (hasOutOfStockText) {
-      inStock = false;
+    if (preorderIndicators.some(indicator => indicator)) {
+      inStock = true;
+      isPreorder = true;
+    } else {
+      // PRIORITY 2: Check for Add to Cart/Wishlist availability (only if not preorder)
+      const availabilitySelectors = [
+        '[data-testid="add-to-cart"]',
+        'button[aria-label*="Add to cart"]',
+        'button:contains("Add to cart")',
+        'button:contains("Add to Cart")',
+        'button:contains("Add to wishlist")',
+        'button:contains("Add to Wishlist")',
+        '.add-to-cart-button',
+        '.add-to-wishlist'
+      ];
+      
+      const hasAvailabilityButton = availabilitySelectors.some(selector => 
+        $(selector).not('[disabled]').not('.disabled').length > 0
+      );
+      
+      if (hasAvailabilityButton) {
+        inStock = true;
+      }
+      // PRIORITY 3: If no preorder and no add to cart, then out of stock
+      // (inStock remains false by default)
     }
     
     return {
@@ -88,7 +98,8 @@ export async function checkBigW(url: string): Promise<NormalizedProduct> {
       productTitle: title,
       variants: [{
         price,
-        inStock
+        inStock,
+        isPreorder
       }]
     };
     
@@ -101,7 +112,8 @@ export async function checkBigW(url: string): Promise<NormalizedProduct> {
       productTitle: "Error loading product",
       variants: [{
         price: null,
-        inStock: false
+        inStock: false,
+        isPreorder: false
       }]
     };
   }

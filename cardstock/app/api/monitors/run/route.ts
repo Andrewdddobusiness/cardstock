@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const products = await prisma.product.findMany({ 
+    const products = await (prisma.product as any).findMany({ 
       include: { 
         retailer: true, 
         variants: true 
@@ -26,7 +26,9 @@ export async function GET() {
           const adapter = adapters[product.retailer.platform] ?? adapters.genericDom;
           const result = await adapter(product.url, { postcode: "2000" });
           
-          console.log(`Scrape result: ${result.productTitle} - $${result.variants[0]?.price} - ${result.variants[0]?.inStock ? 'In Stock' : 'Out of Stock'}`);
+          const resultVariant = result.variants[0];
+          const statusText = resultVariant?.isPreorder ? 'Preorder' : (resultVariant?.inStock ? 'In Stock' : 'Out of Stock');
+          console.log(`Scrape result: ${result.productTitle} - $${resultVariant?.price} - ${statusText}${resultVariant?.isPreorder ? ' (PREORDER)' : ''}`);
           
           // Get or create variant
           let variant = product.variants[0];
@@ -39,7 +41,8 @@ export async function GET() {
           // Apply the first variant result
           const firstVariant = result.variants[0] || { 
             inStock: false, 
-            price: null 
+            price: null,
+            isPreorder: false
           };
           
           await applyResult(product.id, variant.id, firstVariant);
