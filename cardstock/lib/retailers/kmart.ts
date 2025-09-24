@@ -49,31 +49,46 @@ export async function checkKmart(url: string): Promise<NormalizedProduct> {
       }
     }
     
-    // Kmart specific stock detection
+    // Kmart specific stock detection with priority system
     let inStock = false;
+    let isInStoreOnly = false;
     
-    // Check for add to cart button
-    const addToCartButton = $('[data-automation="add-to-cart"], button:contains("Add to Cart"), button:contains("Add to cart")').not('[disabled]').not('.disabled');
-    if (addToCartButton.length > 0) {
-      inStock = true;
-    }
-    
-    // Check for out of stock indicators
-    const outOfStockIndicators = [
-      "out of stock",
-      "sold out",
-      "unavailable", 
-      "notify me",
-      "currently unavailable"
+    // PRIORITY 1: Check for "In Store Only" indicators
+    const inStoreOnlyIndicators = [
+      $('*:contains("In Store Only")').length > 0,
+      $('*:contains("In-Store Only")').length > 0,
+      $('*:contains("Available in store")').length > 0,
+      $('*:contains("Check stock at")').length > 0,
+      $('[data-automation*="store-only"]').length > 0
     ];
     
-    const pageText = $('body').text().toLowerCase();
-    const hasOutOfStockText = outOfStockIndicators.some(indicator => 
-      pageText.includes(indicator)
-    );
-    
-    if (hasOutOfStockText) {
-      inStock = false;
+    if (inStoreOnlyIndicators.some(indicator => indicator)) {
+      inStock = true;
+      isInStoreOnly = true;
+    } else {
+      // PRIORITY 2: Check for online add to cart availability
+      const addToCartButton = $('[data-automation="add-to-cart"], button:contains("Add to Cart"), button:contains("Add to cart")').not('[disabled]').not('.disabled');
+      if (addToCartButton.length > 0) {
+        inStock = true;
+      } else {
+        // PRIORITY 3: Check for explicit out of stock indicators
+        const outOfStockIndicators = [
+          "out of stock",
+          "sold out",
+          "unavailable", 
+          "notify me",
+          "currently unavailable"
+        ];
+        
+        const pageText = $('body').text().toLowerCase();
+        const hasOutOfStockText = outOfStockIndicators.some(indicator => 
+          pageText.includes(indicator)
+        );
+        
+        if (hasOutOfStockText) {
+          inStock = false;
+        }
+      }
     }
     
     return {
@@ -82,7 +97,8 @@ export async function checkKmart(url: string): Promise<NormalizedProduct> {
       productTitle: title,
       variants: [{
         price,
-        inStock
+        inStock,
+        isInStoreOnly
       }]
     };
     

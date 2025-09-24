@@ -27,8 +27,10 @@ export async function GET() {
           const result = await adapter(product.url, { postcode: "2000" });
           
           const resultVariant = result.variants[0];
-          const statusText = resultVariant?.isPreorder ? 'Preorder' : (resultVariant?.inStock ? 'In Stock' : 'Out of Stock');
-          console.log(`Scrape result: ${result.productTitle} - $${resultVariant?.price} - ${statusText}${resultVariant?.isPreorder ? ' (PREORDER)' : ''}`);
+          const statusText = resultVariant?.isPreorder ? 'Preorder' : 
+                           resultVariant?.isInStoreOnly ? 'In Store Only' :
+                           (resultVariant?.inStock ? 'In Stock' : 'Out of Stock');
+          console.log(`Scrape result: ${result.productTitle} - $${resultVariant?.price} - ${statusText}`);
           
           // Get or create variant
           let variant = product.variants[0];
@@ -42,7 +44,8 @@ export async function GET() {
           const firstVariant = result.variants[0] || { 
             inStock: false, 
             price: null,
-            isPreorder: false
+            isPreorder: false,
+            isInStoreOnly: false
           };
           
           await applyResult(product.id, variant.id, firstVariant);
