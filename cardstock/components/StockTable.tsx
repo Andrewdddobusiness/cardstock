@@ -25,7 +25,7 @@ type StockRow = {
   inStock: boolean
   price: number | null
   lastSeen: Date
-  status: 'available' | 'out-of-stock' | 'preorder' | 'in-store-only' | 'unknown'
+  status: 'available' | 'out-of-stock' | 'preorder' | 'in-store-only' | 'unknown' | 'unavailable'
   releaseDate?: Date
   url: string
 }
@@ -59,10 +59,11 @@ export default function StockTable({ products }: StockTableProps) {
             price: avail.price ? Number(avail.price) : null,
             lastSeen: new Date(avail.seenAt),
             status: (() => {
-              // Check if the latest event has preorder or in-store-only flags
+              // Check if the latest event has preorder, in-store-only, or unavailable flags
               const latestEvent = variant.events[0];
               if (latestEvent?.details && typeof latestEvent.details === 'object' && 'cur' in latestEvent.details) {
                 const curDetails = (latestEvent.details as any).cur;
+                if (curDetails?.isUnavailable) return 'unavailable';
                 if (curDetails?.isPreorder) return 'preorder';
                 if (curDetails?.isInStoreOnly) return 'in-store-only';
               }
@@ -88,10 +89,11 @@ export default function StockTable({ products }: StockTableProps) {
             price: latestSnapshot.price ? Number(latestSnapshot.price) : null,
             lastSeen: new Date(latestSnapshot.seenAt),
             status: (() => {
-              // Check if the latest event has preorder or in-store-only flags
+              // Check if the latest event has preorder, in-store-only, or unavailable flags
               const latestEvent = variant.events[0];
               if (latestEvent?.details && typeof latestEvent.details === 'object' && 'cur' in latestEvent.details) {
                 const curDetails = (latestEvent.details as any).cur;
+                if (curDetails?.isUnavailable) return 'unavailable';
                 if (curDetails?.isPreorder) return 'preorder';
                 if (curDetails?.isInStoreOnly) return 'in-store-only';
               }
@@ -243,6 +245,9 @@ export default function StockTable({ products }: StockTableProps) {
     if (status === 'unknown') {
       return <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">Not Monitored</span>
     }
+    if (status === 'unavailable') {
+      return <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">Unavailable</span>
+    }
     return <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">Unknown</span>
   }
 
@@ -291,6 +296,7 @@ export default function StockTable({ products }: StockTableProps) {
             <option value="out-of-stock">Out of Stock</option>
             <option value="preorder">Preorder</option>
             <option value="in-store-only">In Store Only</option>
+            <option value="unavailable">Unavailable</option>
             <option value="unknown">Not Monitored</option>
           </select>
         </div>

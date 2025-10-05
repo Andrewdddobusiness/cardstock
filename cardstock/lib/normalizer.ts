@@ -13,6 +13,7 @@ interface VariantData {
   price: number | null;
   isPreorder?: boolean;
   isInStoreOnly?: boolean;
+  isUnavailable?: boolean;
   storeAvails?: StoreAvail[];
 }
 
@@ -73,6 +74,7 @@ export async function applyResult(productId: string, variantId: string, v: Varia
     price: v.price,
     isPreorder: v.isPreorder || false,
     isInStoreOnly: v.isInStoreOnly || false,
+    isUnavailable: v.isUnavailable || false,
     stores: (v.storeAvails || [])
       .map(s => `${s.storeCode}:${s.inStock}`)
       .sort() 
@@ -111,7 +113,8 @@ export async function applyResult(productId: string, variantId: string, v: Varia
             inStock: v.inStock,
             price: v.price,
             isPreorder: v.isPreorder || false,
-            isInStoreOnly: v.isInStoreOnly || false
+            isInStoreOnly: v.isInStoreOnly || false,
+            isUnavailable: v.isUnavailable || false
           }
         }
       }

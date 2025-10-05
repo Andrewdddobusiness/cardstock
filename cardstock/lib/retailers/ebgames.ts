@@ -9,6 +9,196 @@ class CloudflareChallengeError extends Error {
   }
 }
 
+// Production-ready status model per specification
+type EBStatus = 'IN_STOCK' | 'OUT_OF_STOCK' | 'PREORDER' | 'REMOVED' | 'UNKNOWN';
+
+interface EBVerdict {
+  status: EBStatus;               // single source of truth
+  inStock: boolean;              // derived (IN_STOCK only)
+  isPreorder: boolean;           // PREORDER only
+  reason: 'API_IN_STOCK' | 'JSONLD_IN_STOCK' | 'EXPLICIT_OOS' | 
+          'JSONLD_OUT_OF_STOCK' | 'JSONLD_PREORDER' | 
+          'ADD_TO_CART_AVAILABLE' | 'PAGE_NOT_FOUND' | 'UNKNOWN';
+}
+
+interface EBSignals {
+  apiInStock?: boolean;
+  jsonldAvailability?: 'InStock'|'OutOfStock'|'PreOrder'|'Unknown';
+  explicitOOSStrong?: boolean;
+  explicitOOSWeak?: boolean;
+  explicitPreorder?: boolean;
+  pageRemoved: boolean;
+  hydratedAddToCart?: boolean;
+}
+
+// Exact decision function — tuned for EB PDPs
+function decideEB(signals: EBSignals): EBVerdict {
+  // Page removed first
+  if (signals.pageRemoved)
+    return { status:'REMOVED', inStock:false, isPreorder:false, reason:'PAGE_NOT_FOUND' };
+
+  // Authoritative API/inlined inventory (when present)
+  if (signals.apiInStock)
+    return { status:'IN_STOCK', inStock:true, isPreorder:false, reason:'API_IN_STOCK' };
+
+  // 🟢 Preorder signals MUST be checked BEFORE strong OOS
+  // This ensures products with both preorder and "sold out" text are correctly classified
+  if (signals.jsonldAvailability === 'PreOrder')
+    return { status:'PREORDER', inStock:false, isPreorder:true, reason:'JSONLD_PREORDER' };
+
+  // Explicit preorder detection (release dates, deposit hints, etc)
+  if (signals.explicitPreorder)
+    return { status:'PREORDER', inStock:false, isPreorder:true, reason:'JSONLD_PREORDER' };
+
+  // 🔴 Strong OOS comes AFTER preorder checks
+  if (signals.explicitOOSStrong)
+    return { status:'OUT_OF_STOCK', inStock:false, isPreorder:false, reason:'EXPLICIT_OOS' };
+
+  // JSON-LD availability signals
+  if (signals.jsonldAvailability === 'InStock')
+    return { status:'IN_STOCK', inStock:true, isPreorder:false, reason:'JSONLD_IN_STOCK' };
+  if (signals.jsonldAvailability === 'OutOfStock')
+    return { status:'OUT_OF_STOCK', inStock:false, isPreorder:false, reason:'JSONLD_OUT_OF_STOCK' };
+
+  // Weak OOS after all other checks
+  if (signals.explicitOOSWeak)
+    return { status:'OUT_OF_STOCK', inStock:false, isPreorder:false, reason:'EXPLICIT_OOS' };
+
+  // Hydrated, enabled Add-to-Cart (client) last
+  if (signals.hydratedAddToCart === true)
+    return { status:'IN_STOCK', inStock:true, isPreorder:false, reason:'ADD_TO_CART_AVAILABLE' };
+
+  return { status:'UNKNOWN', inStock:false, isPreorder:false, reason:'UNKNOWN' };
+}
+
+// Robust soft-404 detection per specification
+function detectPageRemoved(html: string, $: cheerio.CheerioAPI, status: number): boolean {
+  // HTTP status check
+  if (status === 404 || status === 410) return true;
+  
+  // Soft-404 content check (scoped to main content only, no body fallback)
+  const mainContent = $('main, .content, .product-container').first().text().toLowerCase();
+  const softErrorPhrases = [
+    'our princess is in another castle',
+    'we couldn\'t find the page',
+    'page not found',
+    'page may have been moved or deleted'
+  ];
+  
+  return softErrorPhrases.some(phrase => mainContent.includes(phrase));
+}
+
+// Server-first inlined state parser (reusing BigW's proven patterns)
+function findEBInventorySignals($: cheerio.CheerioAPI): { 
+  inStock?: boolean; 
+  availableOnline?: boolean;
+  purchasable?: boolean;
+  signals: Record<string, any>;
+} {
+  const signals: Record<string, any> = {};
+  
+  // Inventory-related boolean keys to search for
+  const inventoryKeys = ['inStock', 'availableOnline', 'purchasable', 'availability', 'availableToSell'];
+  
+  let foundInStock: boolean | undefined;
+  let foundAvailableOnline: boolean | undefined;
+  let foundPurchasable: boolean | undefined;
+  
+  // Helper to check if object has product context (SKU, price, offers, etc)
+  function hasProductContext(obj: any): boolean {
+    if (!obj || typeof obj !== 'object') return false;
+    const contextKeys = ['sku', 'id', 'price', 'title', 'name', 'offers', 'amount', 'priceRange', 'product'];
+    return contextKeys.some(key => key in obj);
+  }
+  
+  // Deep walk function to find inventory booleans near product context
+  function walkForInventory(node: any, path: string[] = []): void {
+    if (!node || typeof node !== 'object') return;
+    
+    // If this node has product context, check for inventory booleans
+    if (hasProductContext(node)) {
+      inventoryKeys.forEach(key => {
+        if (typeof node[key] === 'boolean') {
+          if (key === 'inStock' && foundInStock === undefined) {
+            foundInStock = node[key];
+            signals[`inventory_${key}`] = node[key];
+          } else if (key === 'availableOnline' && foundAvailableOnline === undefined) {
+            foundAvailableOnline = node[key];
+            signals[`inventory_${key}`] = node[key];
+          } else if (key === 'purchasable' && foundPurchasable === undefined) {
+            foundPurchasable = node[key];
+            signals[`inventory_${key}`] = node[key];
+          }
+        }
+        
+        // Also check for numeric availability
+        if (key === 'availableToSell' && typeof node[key] === 'number') {
+          const available = node[key] > 0;
+          if (foundInStock === undefined) {
+            foundInStock = available;
+            signals[`inventory_${key}`] = node[key];
+          }
+        }
+      });
+    }
+    
+    // Recursively walk all properties
+    for (const [key, value] of Object.entries(node)) {
+      if (typeof value === 'object' && value !== null) {
+        walkForInventory(value, [...path, key]);
+      }
+    }
+  }
+  
+  // Scan all script tags for JSON data (using BigW's proven patterns)
+  const scriptTags = $('script');
+  scriptTags.each((_, el) => {
+    const content = $(el).html();
+    if (!content) return;
+    
+    // Try to parse as JSON
+    const jsonCandidates = [];
+    
+    // Direct JSON content
+    if (content.trim().startsWith('{') || content.trim().startsWith('[')) {
+      jsonCandidates.push(content.trim());
+    }
+    
+    // Extract from __NEXT_DATA__ or application/json scripts
+    if ($(el).attr('id') === '__NEXT_DATA__' || $(el).attr('type') === 'application/json') {
+      jsonCandidates.push(content.trim());
+    }
+    
+    // Look for variable assignments (using [\s\S]*? for multiline support)
+    const varMatches = content.match(/(?:window\.|var\s+|const\s+|let\s+)[\w$]+\s*=\s*(\{[\s\S]*?\});?/g);
+    if (varMatches) {
+      varMatches.forEach(match => {
+        const jsonMatch = match.match(/=\s*(\{[\s\S]*?\});?$/);
+        if (jsonMatch) {
+          jsonCandidates.push(jsonMatch[1]);
+        }
+      });
+    }
+    
+    // Parse all JSON candidates
+    jsonCandidates.forEach(jsonStr => {
+      try {
+        const data = JSON.parse(jsonStr);
+        walkForInventory(data);
+      } catch {
+        // Ignore invalid JSON
+      }
+    });
+  });
+  
+  return {
+    inStock: foundInStock,
+    availableOnline: foundAvailableOnline,
+    purchasable: foundPurchasable,
+    signals
+  };
+}
+
 function sanitizePrice(value: string | undefined | null): number | null {
   if (!value) return null;
   const match = value.match(/[\d.,]+/);
@@ -17,28 +207,99 @@ function sanitizePrice(value: string | undefined | null): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-function parseLdAvailability(data: unknown, collector: Set<string>) {
-  if (!data) return;
-
-  if (typeof data === "string") {
-    collector.add(data);
-    return;
+// JSON-LD availability parser (Product-only, safer)
+function parseEBJsonLdAvailability($: cheerio.CheerioAPI): 'InStock' | 'OutOfStock' | 'PreOrder' | 'Unknown' {
+  const nodes = $('script[type="application/ld+json"]');
+  for (const el of nodes.toArray()) {
+    try {
+      const data = JSON.parse($(el).contents().text());
+      const items = Array.isArray(data) ? data : [data];
+      for (const d of items) {
+        // Only trust @type: Product nodes
+        if (d?.['@type'] !== 'Product') continue;
+        
+        const offers = (d?.offers ?? d?.offer ?? d?.Offers);
+        const arr = Array.isArray(offers) ? offers : offers ? [offers] : [];
+        for (const off of arr) {
+          const availRaw = String(off?.availability || '').toLowerCase();
+          
+          if (availRaw.includes('instock')) return 'InStock';
+          if (availRaw.includes('outofstock')) return 'OutOfStock';
+          if (availRaw.includes('preorder')) return 'PreOrder';
+        }
+      }
+    } catch { /* ignore malformed JSON */ }
   }
-
-  if (Array.isArray(data)) {
-    for (const item of data) {
-      parseLdAvailability(item, collector);
-    }
-    return;
-  }
-
-  if (typeof data === "object") {
-    const obj = data as Record<string, unknown>;
-    if (obj.availability) parseLdAvailability(obj.availability, collector);
-    if (obj.itemAvailability) parseLdAvailability(obj.itemAvailability, collector);
-    if (obj.offers) parseLdAvailability(obj.offers, collector);
-  }
+  return 'Unknown';
 }
+
+// Explicit pre-order detection (semantic, multi-signal)
+function detectExplicitPreorder($: cheerio.CheerioAPI): boolean {
+  // Try multiple container selectors that work for EB Games
+  let $pdp = $('main, #main, .content, .product-container').first();
+
+  // If traditional containers not found, try EB Games specific selectors
+  if (!$pdp.length) {
+    // Try to find the product detail area by looking for elements with product classes
+    $pdp = $('[class*="product-detail"], [class*="pdp"], [class*="Product"]').first();
+
+    // If still not found, use a broader approach but exclude footer/header
+    if (!$pdp.length) {
+      // Get the body content excluding header and footer
+      const $body = $('body');
+
+      // Clone the body and remove header/footer to avoid false positives
+      const $content = $body.clone();
+      $content.find('header, [class*="header"], [class*="Header"], nav, footer, [class*="footer"], [class*="Footer"]').remove();
+      $pdp = $content;
+    }
+  }
+
+  // If still no container found, return false
+  if (!$pdp.length) return false;
+
+  const t = $pdp.text().toLowerCase();
+
+  // Direct badge/cta wording - more flexible patterns
+  if (/preorder|pre-order|pre\s+order/.test(t)) return true;
+
+  // Release date near buy area (months/weekday pattern covers EB chips like "Fri, 14 Nov 2025")
+  const hasRelease = /\b(release|releases|releasing|release date)\b/.test(t) ||
+                     /\b(?:mon|tue|wed|thu|fri|sat|sun),?\s+\d{1,2}\s+\w+\s+\d{4}\b/i.test(t);
+
+  // Deposit hint used by EB for preorder
+  const hasDeposit = /\bdeposit\b/.test(t);
+
+  return hasRelease || hasDeposit;
+}
+
+// Split OOS into strong vs weak (scoped to main content)
+function detectExplicitOOSFlags($: cheerio.CheerioAPI): { strong: boolean; weak: boolean } {
+  // Use the same container logic as detectExplicitPreorder
+  let $pdp = $('main, #main, .content, .product-container').first();
+
+  // If traditional containers not found, try EB Games specific selectors
+  if (!$pdp.length) {
+    $pdp = $('[class*="product-detail"], [class*="pdp"], [class*="Product"]').first();
+
+    // If still not found, use body excluding header/footer
+    if (!$pdp.length) {
+      const $body = $('body');
+      const $content = $body.clone();
+      $content.find('header, [class*="header"], [class*="Header"], nav, footer, [class*="footer"], [class*="Footer"]').remove();
+      $pdp = $content;
+    }
+  }
+
+  const t = ($pdp.text() || '').toLowerCase();
+
+  const strong = /(sold out|out of stock|no longer available)/.test(t);
+  const weak   = /(unavailable online|currently unavailable|not available online|not available)/.test(t);
+
+  return { strong, weak };
+}
+
+// Removed: parseLdAvailability - replaced with parseEBJsonLdAvailability
 
 function detectCloudflareInterception(html: string, $: cheerio.CheerioAPI): boolean {
   const title = $("title").first().text().toLowerCase();
@@ -54,234 +315,234 @@ function detectCloudflareInterception(html: string, $: cheerio.CheerioAPI): bool
   );
 }
 
-function detectPreorder($: cheerio.CheerioAPI, pageText: string): boolean {
-  const preorderSelectors = [
-    '*[data-testid*="preorder"]',
-    '*[data-test*="preorder"]',
-    '*[data-qa*="preorder"]',
-    'button:contains("Preorder")',
-    'button:contains("Pre-order")',
-    'button:contains("Pre order")',
-    'a:contains("Preorder")',
-    'a:contains("Pre-order")',
-    '.badge-preorder',
-    '.pre-order',
-    '.preorder'
-  ];
+// Skeleton selectors seen commonly across frameworks; keep broad but safe
+const SKELETON_SELS = [
+  '.MuiSkeleton-root',
+  '[class*="skeleton"]',
+  '[data-testid*="skeleton"]',
+  '[aria-busy="true"]',
+];
 
-  const hasExplicitPreorderElement = preorderSelectors.some(selector =>
-    $(selector)
-      .filter((_, el) => $(el).text().toLowerCase().includes("pre-order") || $(el).text().toLowerCase().includes("preorder"))
-      .length > 0
-  );
+// Status anchors that indicate hydrated content is present
+const STATUS_ANCHORS = [
+  // strong OOS text in PDP container
+  /(?:^|\b)(out of stock|sold out|no longer available)(?:\b|$)/i,
+  // preorder badge/cta
+  /(?:^|\b)pre[\s-]?order(?:\b|$)/i,
+];
 
-  if (hasExplicitPreorderElement) {
-    return true;
-  }
+async function waitForEbpdpReady(page: import('playwright').Page, timeoutMs = 8000) {
+  const start = Date.now();
+  const pdp = page.locator('main, #main, .content, .product-container').first();
 
-  const availabilityHref =
-    $("[itemprop='availability']").attr("href") ||
-    $("meta[itemprop='availability']").attr("content") ||
-    $("link[itemprop='availability']").attr("href");
+  // Wait for the PDP container at least
+  await pdp.waitFor({ state: 'visible', timeout: Math.min(2000, timeoutMs) }).catch(() => {});
 
-  if (availabilityHref && availabilityHref.toLowerCase().includes("preorder")) {
-    return true;
-  }
+  // Poll until one of these happens:
+  //  - no visible skeletons in PDP area
+  //  - a status anchor is visible (OOS or preorder text)
+  //  - an Add to Cart button exists and is either enabled or clearly disabled
+  while (Date.now() - start < timeoutMs) {
+    const hasSkeleton =
+      (await pdp.locator(SKELETON_SELS.join(',')).first().isVisible().catch(() => false)) === true;
 
-  const ldAvailabilities = new Set<string>();
-  $("script[type='application/ld+json']").each((_, el) => {
-    const raw = $(el).contents().text();
-    if (!raw) return;
-    try {
-      const data = JSON.parse(raw);
-      parseLdAvailability(data, ldAvailabilities);
-    } catch {
-      // Ignore malformed JSON blocks – EB Games sometimes includes templated variables
+    // Text anchor checks
+    const text = (await pdp.innerText().catch(() => '')).toLowerCase();
+    const hasStatusAnchor = STATUS_ANCHORS.some((re) => re.test(text));
+
+    // CTA checks (scoped, and enabled-awareness)
+    const btn = pdp.getByRole('button', { name: /add to cart/i }).first();
+    const btnVisible = await btn.isVisible().catch(() => false);
+    const btnEnabled = btnVisible ? await btn.isEnabled().catch(() => false) : false;
+
+    if (!hasSkeleton && (hasStatusAnchor || btnVisible)) {
+      return { btnVisible, btnEnabled };
     }
-  });
 
-  const hasLdPreorder = Array.from(ldAvailabilities).some(value =>
-    value.toLowerCase().includes("preorder")
-  );
-
-  if (hasLdPreorder) {
-    return true;
+    // small backoff jitter
+    await page.waitForTimeout(250 + Math.floor(Math.random() * 200));
   }
 
-  const preorderTextIndicators = [
-    "preorder",
-    "pre-order",
-    "pre order",
-    "prepurchase",
-    "pre-purchase",
-    "collect on release",
-    "release day",
-    "coming soon",
-    "release date"
-  ];
-
-  const hasKeyword = preorderTextIndicators.some(keyword => pageText.includes(keyword));
-  const mentionsDeposit = pageText.includes("deposit");
-  const mentionsReleaseYear = /20\d{2}/.test(pageText);
-
-  return hasKeyword || mentionsDeposit || mentionsReleaseYear;
+  // Fallback: return whatever we could read (likely unknown)
+  const btn = page.locator('main, #main, .content, .product-container').first()
+    .getByRole('button', { name: /add to cart/i }).first();
+  const btnVisible = await btn.isVisible().catch(() => false);
+  const btnEnabled = btnVisible ? await btn.isEnabled().catch(() => false) : false;
+  return { btnVisible, btnEnabled };
 }
 
 async function checkEBWithPlaywright(url: string): Promise<NormalizedProduct> {
-  const browser = await chromium.launch({ 
+  const browser = await chromium.launch({
     headless: true,
-    args: ['--disable-blink-features=AutomationControlled']
+    args: ['--disable-blink-features=AutomationControlled'],
   });
-  
+
   try {
     const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      viewport: { width: 1920, height: 1080 },
-      locale: 'en-AU'
+      userAgent:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      viewport: { width: 1440, height: 900 },
+      locale: 'en-AU',
+      timezoneId: 'Australia/Sydney',
     });
-    
+
     const page = await context.newPage();
-    
-    // Navigate to the page and wait for network to be idle
-    await page.goto(url, { 
-      waitUntil: 'networkidle',
-      timeout: 30000 
+
+    // Capture product JSON the app fetches (authoritative signal)
+    let apiInStock: boolean | undefined;
+    page.on('response', async (r) => {
+      try {
+        const urlStr = r.url();
+        const ct = r.headers()['content-type'] || '';
+        if (!/json/i.test(ct)) return;
+        if (!/product|pdp|graphql|inventory/i.test(urlStr)) return;
+        const json = await r.json();
+        const hit = findBooleanInJson(json);
+        if (typeof hit === 'boolean') apiInStock = hit;
+      } catch {}
     });
-    
-    // Wait a bit for any dynamic content
-    await page.waitForTimeout(2000);
-    
-    // Get the page content
-    const html = await page.content();
-    const $ = cheerio.load(html);
-    
-    // Extract title
-    const title = await page.evaluate(() => {
-      const selectors = [
-        'h1.product-title',
-        'h1[data-testid="product-title"]',
-        '.product-name h1',
-        'h1'
-      ];
-      
-      for (const selector of selectors) {
-        const el = document.querySelector(selector);
-        if (el && el.textContent) {
-          return el.textContent.trim();
-        }
-      }
-      
-      return document.title || 'Unknown Product';
-    });
-    
-    // Extract price
-    const price = await page.evaluate(() => {
-      const priceSelectors = [
-        '.price-current',
-        '.current-price',
-        '.product-price',
-        '.price',
-        '[data-testid="price"]',
-        '[itemprop="price"]'
-      ];
-      
-      for (const selector of priceSelectors) {
-        const el = document.querySelector(selector);
-        if (el) {
-          const priceText = el.textContent || el.getAttribute('content') || el.getAttribute('value');
-          if (priceText) {
-            const match = priceText.match(/[\d.,]+/);
-            if (match) {
-              const parsed = parseFloat(match[0].replace(/,/g, ''));
-              if (!isNaN(parsed) && parsed > 0) {
-                return parsed;
-              }
-            }
-          }
-        }
-      }
-      
-      return null;
-    });
-    
-    // Check for preorder using Playwright
-    const pageText = await page.evaluate(() => document.body.innerText.toLowerCase());
-    const isPreorder = detectPreorder($, pageText) || await page.evaluate(() => {
-      // Additional Playwright-specific checks
-      const preorderElements = document.querySelectorAll('*');
-      for (const el of preorderElements) {
-        const text = el.textContent || '';
-        if (text.toLowerCase().includes('preorder') || 
-            text.toLowerCase().includes('pre-order') ||
-            text.toLowerCase().includes('pre order')) {
-          return true;
-        }
-      }
-      return false;
-    });
-    
-    let inStock = false;
-    
-    if (isPreorder) {
-      inStock = true;
-    } else {
-      // Check for add to cart buttons
-      const hasAddToCart = await page.evaluate(() => {
-        const buttonSelectors = [
-          'button:not(:disabled)',
-          'input[type="button"]:not(:disabled)',
-          'input[type="submit"]:not(:disabled)'
-        ];
-        
-        for (const selector of buttonSelectors) {
-          const buttons = document.querySelectorAll(selector);
-          for (const button of buttons) {
-            const text = (button.textContent || button.getAttribute('value') || '').toLowerCase();
-            if (text.includes('add to cart') || 
-                text.includes('add to basket') ||
-                text.includes('wishlist')) {
-              return true;
-            }
-          }
-        }
-        
-        return false;
-      });
-      
-      if (hasAddToCart) {
-        inStock = true;
-      } else {
-        // Check for out of stock indicators
-        const isOutOfStock = await page.evaluate(() => {
-          const pageText = document.body.innerText.toLowerCase();
-          return pageText.includes('out of stock') || 
-                 pageText.includes('sold out') ||
-                 pageText.includes('not available');
-        });
-        
-        inStock = !isOutOfStock;
-      }
+
+    const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    const pageStatus = res?.status() ?? 0;
+
+    // Small jitter + network idle (bounded)
+    await page.waitForTimeout(400 + Math.random() * 400);
+    await page.waitForLoadState('networkidle', { timeout: 6000 }).catch(() => {});
+
+    // NEW: wait until skeletons are gone OR a status anchor/CTA is present
+    let { btnVisible, btnEnabled } = await waitForEbpdpReady(page, 8000);
+
+    // Helper to compute signals from current page state
+    const computeSignals = async (): Promise<{ signals: EBSignals; $: cheerio.CheerioAPI }> => {
+      const html = await page.content();
+      const $ = cheerio.load(html);
+
+      // Soft-404 detection scoped to main content
+      const mainText = $('main, #main, .content, .product-container').first().text().toLowerCase();
+
+      const soft404 = /our princess is in another castle|we couldn.?t find the page|page not found|may have been moved or deleted/.test(
+        mainText
+      );
+
+      // JSON-LD availability
+      const jsonldAvailability = parseEBJsonLdAvailability($);
+
+      // Explicit pre-order and OOS text detection
+      const explicitPreorder = detectExplicitPreorder($);
+      const { strong: explicitOOSStrong, weak: explicitOOSWeak } = detectExplicitOOSFlags($);
+
+      // Map CTA state
+      const hydratedAddToCart = btnVisible && btnEnabled;
+
+      return {
+        signals: {
+          pageRemoved: pageStatus === 404 || pageStatus === 410 || soft404,
+          apiInStock,
+          jsonldAvailability,
+          explicitOOSStrong,
+          explicitOOSWeak,
+          explicitPreorder,
+          hydratedAddToCart,
+        },
+        $,
+      };
+    };
+
+    // Compute initial signals
+    let { signals, $ } = await computeSignals();
+    let verdict = decideEB(signals);
+
+
+    // Retry loop: if verdict is still UNKNOWN, retry up to 3 times
+    let retries = 0;
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY = 400;
+
+    while (verdict.status === 'UNKNOWN' && retries < MAX_RETRIES) {
+      await page.waitForTimeout(RETRY_DELAY);
+
+      // Re-check button state
+      const pdp = page.locator('main, #main, .content, .product-container').first();
+      const btn = pdp.getByRole('button', { name: /add to cart/i }).first();
+      btnVisible = await btn.isVisible().catch(() => false);
+      btnEnabled = btnVisible ? await btn.isEnabled().catch(() => false) : false;
+
+      // Recompute signals
+      const retry = await computeSignals();
+      signals = retry.signals;
+      $ = retry.$;
+      verdict = decideEB(signals);
+
+      retries++;
     }
-    
+
+    // Title
+    const title =
+      $('h1.product-title').text().trim() ||
+      $('[data-testid="product-title"]').text().trim() ||
+      $('.product-name h1').text().trim() ||
+      $('meta[property="og:title"]').attr('content') ||
+      $('title').text().trim() ||
+      'Unknown Product';
+
+    // Price (don't flip status based on price)
+    const price =
+      sanitizePrice(
+        $('.price-current, .current-price, .product-price, .price, [data-testid="price"], [itemprop="price"]')
+          .first()
+          .attr('content') ||
+          $('.price-current, .current-price, .product-price, .price, [data-testid="price"], [itemprop="price"]')
+            .first()
+            .attr('value') ||
+          $('.price-current, .current-price, .product-price, .price, [data-testid="price"], [itemprop="price"]')
+            .first()
+            .text()
+      ) ?? null;
+
+    await context.close();
     await browser.close();
-    
+
     return {
-      retailer: "ebgames.com.au",
+      retailer: 'ebgames.com.au',
       productUrl: url,
       productTitle: title,
       variants: [
         {
           price,
-          inStock,
-          isPreorder
-        }
-      ]
+          inStock: verdict.inStock,
+          isPreorder: verdict.status === 'PREORDER',
+          isUnavailable: verdict.status === 'REMOVED',
+        },
+      ],
     };
-    
   } catch (error) {
-    await browser.close();
+    await browser.close().catch(() => {});
     console.error(`Error scraping EB Games with Playwright ${url}:`, error);
     throw error;
+  }
+
+  // Guarded deep scan for availability booleans
+  function findBooleanInJson(obj: any): boolean | undefined {
+    const keys = ['inStock', 'availableOnline', 'purchasable', 'availableToSell'];
+    function hasProductCtx(o: any) {
+      if (!o || typeof o !== 'object') return false;
+      const ctx = ['sku', 'id', 'price', 'title', 'name', 'offers', 'product', 'gtin'];
+      return ctx.some((k) => k in o);
+    }
+    let result: boolean | undefined;
+    const walk = (node: any) => {
+      if (!node || typeof node !== 'object') return;
+      if (hasProductCtx(node)) {
+        for (const k of keys) {
+          const v = (node as any)[k];
+          if (typeof v === 'boolean' && result === undefined) result = v;
+          if (k === 'availableToSell' && typeof v === 'number' && result === undefined) result = v > 0;
+        }
+      }
+      for (const v of Object.values(node)) if (typeof v === 'object' && v) walk(v);
+    };
+    walk(obj);
+    return result;
   }
 }
 
@@ -296,6 +557,12 @@ export async function checkEB(url: string): Promise<NormalizedProduct> {
       }
     });
 
+    // Handle 403 as likely Cloudflare blocking
+    if (res.status === 403) {
+      console.log("HTTP 403 detected (likely Cloudflare), using Playwright...");
+      return await checkEBWithPlaywright(url);
+    }
+
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     }
@@ -308,6 +575,11 @@ export async function checkEB(url: string): Promise<NormalizedProduct> {
       return await checkEBWithPlaywright(url);
     }
 
+    // Enhanced logging context
+    const phase = 'ssr';
+    const debugInfo: Record<string, any> = { phase, url, signals: {} };
+
+    // Extract title and price (unchanged)
     const title =
       $("h1.product-title").text().trim() ||
       $("h1[data-testid='product-title']").text().trim() ||
@@ -318,7 +590,7 @@ export async function checkEB(url: string): Promise<NormalizedProduct> {
 
     const priceSelectors = [
       ".price-current",
-      ".current-price",
+      ".current-price", 
       ".product-price",
       ".price",
       "[data-testid='price']",
@@ -335,44 +607,54 @@ export async function checkEB(url: string): Promise<NormalizedProduct> {
       if (price !== null) break;
     }
 
-    const pageText = $("body").text().toLowerCase();
-
-    let inStock = false;
-    let isPreorder = detectPreorder($, pageText);
-
-    if (isPreorder) {
-      inStock = true;
-    } else {
-      const availabilitySelectors = [
-        "button:contains('Add to Cart')",
-        "button:contains('Add to Basket')",
-        "button:contains('Add to cart')",
-        "button:contains('Add to basket')",
-        "button:contains('SAVE TO WISHLIST')",
-        ".add-to-cart",
-        "[data-testid='add-to-cart']",
-        "input[value*='Add to Cart']"
-      ];
-
-      const hasAvailabilityButton = availabilitySelectors.some(selector =>
-        $(selector).filter((_, el) => !$(el).is(":disabled") && !$(el).hasClass("disabled")).length > 0
-      );
-
-      if (hasAvailabilityButton) {
-        inStock = true;
-      } else {
-        const outOfStockSelectors = [
-          "*:contains('Out of Stock')",
-          "*:contains('Sold Out')",
-          "*:contains('Not Available')",
-          ".out-of-stock",
-          ".sold-out"
-        ];
-
-        const hasOutOfStockElement = outOfStockSelectors.some(selector => $(selector).length > 0);
-        inStock = hasOutOfStockElement ? false : inStock;
-      }
-    }
+    // NEW: Server-first detection hierarchy per specification
+    
+    // 1. Check for page removal (highest priority)
+    const pageRemoved = detectPageRemoved(html, $, res.status);
+    debugInfo.signals.pageRemoved = pageRemoved;
+    
+    // 2. Inlined state parsing (server-available signals)
+    const inventorySignals = findEBInventorySignals($);
+    debugInfo.signals.inventorySignals = inventorySignals.signals;
+    
+    // Determine API stock status (availableOnline is primary, then inStock, then purchasable)
+    const apiInStock = inventorySignals.availableOnline ?? inventorySignals.inStock ?? inventorySignals.purchasable;
+    debugInfo.signals.apiInStock = apiInStock;
+    
+    // 3. JSON-LD structured data
+    const jsonldAvailability = parseEBJsonLdAvailability($);
+    debugInfo.signals.jsonldAvailability = jsonldAvailability;
+    
+    // 4. Explicit pre-order and OOS text detection
+    const explicitPreorder = detectExplicitPreorder($);
+    const { strong: explicitOOSStrong, weak: explicitOOSWeak } = detectExplicitOOSFlags($);
+    debugInfo.signals.explicitPreorder = explicitPreorder;
+    debugInfo.signals.explicitOOSStrong = explicitOOSStrong;
+    debugInfo.signals.explicitOOSWeak = explicitOOSWeak;
+    
+    // 5. Build signals object and make decision
+    const signals: EBSignals = {
+      apiInStock,
+      jsonldAvailability,
+      explicitOOSStrong,
+      explicitOOSWeak,
+      explicitPreorder,
+      pageRemoved,
+      // No hydrated signals in SSR mode
+    };
+    
+    const verdict = decideEB(signals);
+    debugInfo.verdict = verdict;
+    
+    console.log(`EB Games decision for ${url}:`, {
+      reason: verdict.reason,
+      status: verdict.status,
+      inStock: verdict.inStock,
+      isPreorder: verdict.isPreorder,
+      title,
+      price,
+      debugSignals: Object.keys(debugInfo.signals)
+    });
 
     return {
       retailer: "ebgames.com.au",
@@ -381,8 +663,9 @@ export async function checkEB(url: string): Promise<NormalizedProduct> {
       variants: [
         {
           price,
-          inStock,
-          isPreorder
+          inStock: verdict.inStock,
+          isPreorder: verdict.isPreorder,
+          isUnavailable: verdict.status === 'REMOVED'
         }
       ]
     };

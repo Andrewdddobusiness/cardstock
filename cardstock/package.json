@@ -9,7 +9,9 @@
     "lint": "next lint",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "prisma db seed"
+    "prisma:seed": "prisma db seed",
+    "stock:check": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/quick-stock-check.ts",
+    "stock:detailed": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/check-stock-updates.ts"
   },
   "prisma": {
     "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
@@ -22,6 +24,8 @@
     "@prisma/extension-accelerate": "^2.0.2",
     "bcryptjs": "^2.4.3",
     "cheerio": "1.0.0-rc.12",
+    "dotenv": "^17.2.2",
+    "got": "^14.4.9",
     "next": "15.1.0",
     "next-auth": "^4.24.11",
     "react": "^19.0.0",
@@ -30,6 +34,7 @@
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
+    "@types/got": "^9.6.12",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.1",

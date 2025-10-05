@@ -10,6 +10,7 @@ export type NormalizedVariant = {
   inStock: boolean; 
   isPreorder?: boolean;
   isInStoreOnly?: boolean;
+  isUnavailable?: boolean;
   storeAvails?: StoreAvail[];
 };
 

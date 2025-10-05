@@ -13,7 +13,15 @@ export default async function Dashboard() {
   if (!session) redirect("/login");
 
   // Fetch all products with related data (no date filter so pending items appear)
+  // TEMPORARILY excluding BigW items until scraping is fixed
   const products = await (prisma.product as any).findMany({
+    where: {
+      retailer: {
+        name: {
+          not: "BIG W"
+        }
+      }
+    },
     include: {
       retailer: true,
       variants: {
@@ -44,6 +52,11 @@ export default async function Dashboard() {
 
   // Serialize products to handle Decimal values
   const serializedProducts = serializeProductFast(products);
+
+  // Debug: Log what retailers we found
+  const retailers = [...new Set(products.map(p => p.retailer.name))];
+  console.log('Dashboard retailers after filter:', retailers);
+  console.log('Total products after filter:', products.length);
 
   return (
     <div className="min-h-screen bg-neutral-50">
