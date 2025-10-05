@@ -148,6 +148,9 @@ export default function StockTable({ products }: StockTableProps) {
   const filteredRows = useMemo(() => {
     let filtered = stockRows
     
+    // Filter out Kmart listings
+    filtered = filtered.filter(row => row.retailer.toLowerCase() !== 'kmart')
+    
     if (filterRetailer) {
       filtered = filtered.filter(row => row.retailer.toLowerCase().includes(filterRetailer.toLowerCase()))
     }
