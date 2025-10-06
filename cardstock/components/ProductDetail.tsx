@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { Product, Retailer, ProductVariant, InventorySnapshot, StockEvent } from '@prisma/client'
-import { ArrowLeftIcon, ExternalLinkIcon, CheckCircleIcon, XCircleIcon, ClockIcon } from '@heroicons/react/24/outline'
+import { ArrowLeftIcon, CheckCircleIcon, XCircleIcon, ClockIcon } from '@heroicons/react/24/outline'
+import { ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline'
 
 type ProductWithData = Product & {
   retailer: Retailer
@@ -21,8 +22,8 @@ interface ProductDetailProps {
 interface GroupedProduct {
   product: ProductWithData
   status: 'in-stock' | 'out-of-stock' | 'preorder'
-  price: number | null
-  lastUpdated: Date
+  price: number | string | null
+  lastUpdated: Date | string
 }
 
 // Retailer logos/icons mapping
@@ -60,7 +61,7 @@ export default function ProductDetail({ productName, products, slug }: ProductDe
     return {
       product,
       status,
-      price: latestSnapshot?.price ? Number(latestSnapshot.price) : null,
+      price: latestSnapshot?.price || null,
       lastUpdated: latestSnapshot?.seenAt || product.createdAt
     } as GroupedProduct
   }).filter(Boolean) as GroupedProduct[]
@@ -69,18 +70,29 @@ export default function ProductDetail({ productName, products, slug }: ProductDe
   const preorderProducts = groupedProducts.filter(p => p.status === 'preorder')
   const outOfStockProducts = groupedProducts.filter(p => p.status === 'out-of-stock')
 
-  const formatPrice = (price: number | null) => {
+  const formatPrice = (price: number | string | null) => {
     if (!price) return 'Price N/A'
-    return `$${price.toFixed(2)}`
+    const numPrice = typeof price === 'string' ? parseFloat(price) : price
+    if (isNaN(numPrice)) return 'Price N/A'
+    return `$${numPrice.toFixed(2)}`
   }
 
-  const formatDate = (date: Date) => {
-    return new Intl.DateTimeFormat('en-AU', {
-      day: 'numeric',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date)
+  const formatDate = (date: Date | string) => {
+    try {
+      const dateObj = typeof date === 'string' ? new Date(date) : date
+      // Check if date is valid
+      if (isNaN(dateObj.getTime())) {
+        return 'Unknown'
+      }
+      return new Intl.DateTimeFormat('en-AU', {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit'
+      }).format(dateObj)
+    } catch {
+      return 'Unknown'
+    }
   }
 
   const ProductCard = ({ item, disabled = false }: { item: GroupedProduct, disabled?: boolean }) => (
@@ -113,7 +125,7 @@ export default function ProductDetail({ productName, products, slug }: ProductDe
             </div>
           </div>
         </div>
-        {!disabled && <ExternalLinkIcon className="h-5 w-5 text-gray-400" />}
+        {!disabled && <ArrowTopRightOnSquareIcon className="h-5 w-5 text-gray-400" />}
       </div>
     </a>
   )
@@ -124,7 +136,7 @@ export default function ProductDetail({ productName, products, slug }: ProductDe
       <div className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <Link 
-            href="/"
+            href="/dashboard"
             className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-4"
           >
             <ArrowLeftIcon className="h-4 w-4 mr-1" />

@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 // Map slugs to search terms
 const productMappings: Record<string, string[]> = {
   'evolving-skies-booster-box': ['evolving skies booster box', 'evolving skies booster', 'evolving skies'],
-  'champions-path-elite-trainer-box': ['champions path elite trainer box', 'champions path etb', 'champions path'],
+  'mega-evolutions-phantasmal-flame': ['mega evolutions phantasmal flame', 'phantasmal flame', 'mega evolution'],
   'shining-fates-elite-trainer-box': ['shining fates elite trainer box', 'shining fates etb', 'shining fates'],
   'hidden-fates-elite-trainer-box': ['hidden fates elite trainer box', 'hidden fates etb', 'hidden fates']
 };

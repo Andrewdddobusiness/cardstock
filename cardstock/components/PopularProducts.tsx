@@ -21,11 +21,11 @@ const popularBoxes: PopularProduct[] = [
     imageUrl: 'https://images.pokemontcg.io/swsh7/logo.png'
   },
   {
-    slug: 'champions-path-elite-trainer-box',
-    name: 'Champions Path Elite Trainer Box',
-    description: 'Features Charizard V and Rainbow Charizard VMAX',
-    priceRange: '$140-180',
-    imageUrl: 'https://images.pokemontcg.io/swsh35/logo.png'
+    slug: 'mega-evolutions-phantasmal-flame',
+    name: 'Pokémon TCG - Mega Evolutions Phantasmal Flame',
+    description: 'Features powerful Mega Evolution cards',
+    priceRange: '$80-120',
+    imageUrl: 'https://images.pokemontcg.io/xy10/logo.png'
   },
   {
     slug: 'shining-fates-elite-trainer-box',

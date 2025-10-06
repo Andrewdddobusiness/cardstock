@@ -1,6 +1,7 @@
 import { Metadata } from 'next'
 import ProductDetail from '@/components/ProductDetail'
 import { prisma } from '@/lib/db'
+import { serializeProductFast } from '@/lib/serializer'
 
 interface PageProps {
   params: Promise<{
@@ -14,9 +15,9 @@ const productMappings: Record<string, { searchTerms: string[], displayName: stri
     searchTerms: ['evolving skies booster box', 'evolving skies booster', 'evolving skies'],
     displayName: 'Evolving Skies Booster Box'
   },
-  'champions-path-elite-trainer-box': {
-    searchTerms: ['champions path elite trainer box', 'champions path etb', 'champions path'],
-    displayName: 'Champions Path Elite Trainer Box'
+  'mega-evolutions-phantasmal-flame': {
+    searchTerms: ['mega evolutions phantasmal flame', 'phantasmal flame', 'mega evolution'],
+    displayName: 'Pokémon TCG - Mega Evolutions Phantasmal Flame'
   },
   'shining-fates-elite-trainer-box': {
     searchTerms: ['shining fates elite trainer box', 'shining fates etb', 'shining fates'],
@@ -86,9 +87,12 @@ export default async function ProductPage({ params }: PageProps) {
     }
   })
 
+  // Serialize products to handle Decimal values
+  const serializedProducts = serializeProductFast(products)
+
   return <ProductDetail 
     productName={mapping.displayName} 
-    products={products}
+    products={serializedProducts}
     slug={slug}
   />
 }
