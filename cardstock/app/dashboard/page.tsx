@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
 import StockTable from "@/components/StockTable";
+import PopularProducts from "@/components/PopularProducts";
 import { serializeProductFast } from "@/lib/serializer";
 
 export const dynamic = "force-dynamic";
@@ -65,13 +66,20 @@ export default async function Dashboard() {
       <main className="mx-auto max-w-full xl:max-w-[1400px] p-6">
         <h1 className="text-2xl font-semibold mb-6">Stock Dashboard</h1>
         
-        {serializedProducts.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-neutral-600">No products being tracked yet.</p>
-          </div>
-        ) : (
-          <StockTable products={serializedProducts} />
-        )}
+        {/* Popular Products Section */}
+        <PopularProducts />
+        
+        {/* Stock Table Section */}
+        <div className="mt-6">
+          <h2 className="text-xl font-semibold mb-4">All Products</h2>
+          {serializedProducts.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-neutral-600">No products being tracked yet.</p>
+            </div>
+          ) : (
+            <StockTable products={serializedProducts} />
+          )}
+        </div>
       </main>
     </div>
   );
