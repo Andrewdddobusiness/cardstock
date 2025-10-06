@@ -31,10 +31,12 @@ import { checkGenericDom } from "./genericDom";
 import { checkKmart } from "./kmart";
 import { checkBigW } from "./bigw";
 import { checkEB } from "./ebgames";
+import { checkCollectibleMadness } from "./collectiblemadness";
 
 export const adapters: Record<string, Adapter> = {
   kmart: checkKmart,
   bigw: checkBigW,
   ebgames: checkEB,
+  collectiblemadness: checkCollectibleMadness,
   genericDom: checkGenericDom
 };
